@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Simple Tee Designer (Free)</title>
+<style>
+  :root{
+    --ui: #0f172a;
+    --ui2:#1f2937;
+    --ink:#111827;
+    --text:#e5e7eb;
+    --accent:#22c55e;
+    --muted:#64748b;
+    --panel:#0b1220;
+  }
+  html,body{margin:0;background:#0a0f1a;color:var(--text);font:14px/1.4 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:1200px;margin:0 auto;padding:16px}
+  .app{display:grid;gap:16px;grid-template-columns:340px 1fr}
+  @media (max-width: 980px){.app{grid-template-columns:1fr}}
+  .card{background:linear-gradient(180deg,#0f172a,#0b1220 70%);border:1px solid #111827;border-radius:16px;box-shadow:0 10px 40px rgba(0,0,0,.35)}
+  .card h3{margin:0;padding:14px 16px;border-bottom:1px solid #111827}
+  .panel{padding:12px 16px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 0}
+  .row label{font-weight:600;color:#cbd5e1}
+  .row input[type="file"]{background:#0b1020;border:1px dashed #334155;padding:10px;border-radius:10px;color:#cbd5e1}
+  select,button,input[type="range"]{
+    -webkit-appearance:none;appearance:none;
+    background:#0b1020;border:1px solid #334155;color:#e2e8f0;border-radius:10px;padding:10px 12px
+  }
+  button{cursor:pointer;font-weight:700}
+  button.primary{background:linear-gradient(180deg,#16a34a,#15803d);border-color:#166534}
+  button.ghost{background:#0b1020}
+  .swatches{display:flex;gap:8px;flex-wrap:wrap}
+  .swatch{width:26px;height:26px;border-radius:50%;border:2px solid rgba(255,255,255,.2);cursor:pointer;outline:2px solid transparent}
+  .swatch.active{outline:2px solid var(--accent)}
+  .canvasWrap{display:flex;justify-content:center;align-items:center;padding:16px}
+  .note{color:#94a3b8;font-size:12px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .kbd{font-family:ui-monospace, SFMono-Regular, Menlo, monospace;background:#111827;border:1px solid #1f2937;border-radius:6px;padding:2px 6px}
+  .pill{display:inline-flex;align-items:center;gap:8px;background:#0b1020;border:1px solid #334155;border-radius:999px;padding:6px 10px}
+  .status{font-size:12px;color:#93c5fd}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1 style="margin:4px 0 16px;">🧢 Simple Tee Designer (Free & Embeddable)</h1>
+    <div class="app">
+      <!-- Controls -->
+      <div class="card">
+        <h3>Setup</h3>
+        <div class="panel">
+          <div class="row">
+            <label>Product</label>
+            <select id="product">
+              <option value="tshirt">T-Shirt</option>
+              <option value="longsleeve">Long Sleeve</option>
+              <option value="hoodie">Hoodie</option>
+            </select>
+            <span class="pill"><span id="sideLabel">Front</span>
+              <button id="toggleSide" class="ghost" title="Switch Front/Back">Flip</button>
+            </span>
+          </div>
+
+          <div class="row">
+            <label>Garment Color</label>
+            <div id="swatches" class="swatches" aria-label="garment colors"></div>
+          </div>
+
+          <div class="row">
+            <label>Upload Design</label>
+            <input id="uploader" type="file" accept="image/*" />
+          </div>
+
+          <div class="row">
+            <label>Move</label>
+            <span class="note">Drag the image on the canvas. Tip: on mobile, use one finger to move.</span>
+          </div>
+
+          <div class="row">
+            <label>Scale</label>
+            <input id="scale" type="range" min="0.1" max="3" value="1" step="0.01" />
+          </div>
+          <div class="row">
+            <label>Rotate</label>
+            <input id="rotate" type="range" min="-180" max="180" value="0" step="1" />
+          </div>
+
+          <div class="row grid">
+            <button id="downloadMockup" class="primary">Download Mockup (PNG)</button>
+            <button id="downloadPrint" class="ghost">Download Print-Ready (PNG)</button>
+          </div>
+
+          <div class="row">
+            <span class="note">
+              Print area defaults: <b id="printAreaIn">12&Prime;×14&Prime;</b> at <b>300 DPI</b> for print file.
+              You can change these in the code (see <span class="kbd">CONFIG.PRINT_AREAS</span>).
+            </span>
+          </div>
+
+          <div class="row">
+            <span id="status" class="status">No image uploaded yet.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Canvas / Preview -->
+      <div class="card">
+        <h3>Live Preview</h3>
+        <div class="canvasWrap">
+          <canvas id="preview" width="900" height="1100" style="max-width:100%;border-radius:12px;background:#0b1020;border:1px solid #111827;"></canvas>
+        </div>
+        <div class="panel">
+          <div class="note">
+            The dotted rectangle is the printable area. Your artwork is constrained to that box.
+            Use the sliders to scale/rotate; drag to move. For fine steps, tap the slider and use arrow keys.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* ===========================
+   Simple Tee Designer (Free)
+   - No external libs
+   - Drag to move; sliders to scale/rotate
+   - Front/Back state per product
+   - Export mockup PNG
+   - Export print-ready PNG (design only) at 300 DPI
+   =========================== */
+
+const CONFIG = {
+  PREVIEW: {
+    width: 900,
+    height: 1100,
+    pxPerInch: 75
+  },
+  PRINT_AREAS: {
+    tshirt:   { front: {w:12, h:14, yOffsetIn: 3.0}, back: {w:12, h:14, yOffsetIn: 3.0} },
+    longsleeve:{front: {w:12, h:15, yOffsetIn: 3.0}, back: {w:12, h:15, yOffsetIn: 3.0} },
+    hoodie:   { front: {w:11, h:12, yOffsetIn: 4.0}, back: {w:12, h:14, yOffsetIn: 3.0} },
+  },
+  DPI: 300,
+  COLORS: [
+    {name:"White", hex:"#ffffff"},
+    {name:"Black", hex:"#000000"},
+    {name:"Heather Gray", hex:"#9ca3af"},
+    {name:"Navy", hex:"#0f172a"},
+    {name:"Red", hex:"#b91c1c"},
+    {name:"Royal", hex:"#1d4ed8"},
+    {name:"Forest", hex:"#065f46"},
+    {name:"Sand", hex:"#e5e7eb"}
+  ],
+  SHIRT: { neckR: 52, sleeveW: 150, sleeveH: 120, bodyW: 600, bodyH: 780, shoulderDrop: 40 }
+};
+
+const state = {
+  product: 'tshirt',
+  side: 'front',
+  color: CONFIG.COLORS[1].hex,
+  transforms: {
+    tshirt: { front: {x:0,y:0,scale:1,rotation:0}, back:{x:0,y:0,scale:1,rotation:0} },
+    longsleeve: { front: {x:0,y:0,scale:1,rotation:0}, back:{x:0,y:0,scale:1,rotation:0} },
+    hoodie: { front: {x:0,y:0,scale:1,rotation:0}, back:{x:0,y:0,scale:1,rotation:0} }
+  },
+  img: null,
+  imgNatural: {w:0,h:0},
+  dragging:false,
+  dragStart:{x:0,y:0},
+  imgStart:{x:0,y:0}
+};
+
+const canvas = document.getElementById('preview');
+const ctx = canvas.getContext('2d');
+const ui = {
+  product: document.getElementById('product'),
+  toggleSide: document.getElementById('toggleSide'),
+  sideLabel: document.getElementById('sideLabel'),
+  uploader: document.getElementById('uploader'),
+  scale: document.getElementById('scale'),
+  rotate: document.getElementById('rotate'),
+  downloadMockup: document.getElementById('downloadMockup'),
+  downloadPrint: document.getElementById('downloadPrint'),
+  printAreaIn: document.getElementById('printAreaIn'),
+  status: document.getElementById('status'),
+  swatches: document.getElementById('swatches')
+};
+
+// Build color swatches
+CONFIG.COLORS.forEach((c, idx)=>{
+  const b = document.createElement('button');
+  b.className = 'swatch' + (idx===1?' active':'');
+  b.title = c.name;
+  b.style.background = c.hex;
+  b.addEventListener('click', ()=>{
+    [...ui.swatches.children].forEach(s=>s.classList.remove('active'));
+    b.classList.add('active');
+    state.color = c.hex;
+    draw();
+  });
+  ui.swatches.appendChild(b);
+});
+
+function currentPA(){ return CONFIG.PRINT_AREAS[state.product][state.side]; }
+function in2px(inches){ return inches * CONFIG.PREVIEW.pxPerInch; }
+
+function resetTransformToCenter(){
+  const pa = currentPA();
+  const W = in2px(pa.w), H = in2px(pa.h);
+  const bodyTop = shirtTopY() + in2px(pa.yOffsetIn);
+  const cx = canvas.width/2;
+  const cy = bodyTop + H/2;
+
+  let baseScale = 1;
+  if(state.img){
+    const iw = state.imgNatural.w;
+    const ih = state.imgNatural.h;
+    const s = Math.min(W/iw, H/ih);
+    baseScale = s*0.9;
+  }
+  const xf = getXform();
+  xf.x = cx; xf.y = cy; xf.scale = baseScale; xf.rotation = 0;
+  syncSliders();
+}
+
+function getXform(){ return state.transforms[state.product][state.side]; }
+function syncSliders(){
+  const xf = getXform();
+  ui.scale.value = xf.scale.toFixed(2);
+  ui.rotate.value = xf.rotation.toFixed(0);
+}
+
+function shirtTopY(){ return 110; }
+
+function drawShirtBase(){
+  const { neckR, sleeveW, sleeveH, bodyW, bodyH, shoulderDrop } = CONFIG.SHIRT;
+  const cx = canvas.width/2;
+  const topY = shirtTopY();
+
+  ctx.save();
+  ctx.fillStyle = state.color;
+  ctx.strokeStyle = '#0f172a';
+  ctx.lineWidth = 2;
+
+  ctx.beginPath();
+  ctx.moveTo(cx - bodyW/2 - sleeveW, topY + shoulderDrop);
+  ctx.lineTo(cx - bodyW/2, topY + shoulderDrop);
+  ctx.lineTo(cx - neckR*1.4, topY);
+  const neckDepth = state.side==='front' ? 22 : 14;
+  ctx.quadraticCurveTo(cx - neckR*0.6, topY + neckDepth, cx, topY + neckDepth);
+  ctx.quadraticCurveTo(cx + neckR*0.6, topY + neckDepth, cx + neckR*1.4, topY);
+  ctx.lineTo(cx + bodyW/2, topY + shoulderDrop);
+  ctx.lineTo(cx + bodyW/2 + sleeveW, topY + shoulderDrop);
+  ctx.lineTo(cx + bodyW/2 + sleeveW, topY + shoulderDrop + sleeveH);
+  ctx.lineTo(cx + bodyW/2, topY + shoulderDrop + sleeveH);
+  ctx.lineTo(cx + bodyW/2, topY + shoulderDrop + bodyH - 24);
+  ctx.quadraticCurveTo(cx + bodyW/2, topY + shoulderDrop + bodyH, cx + bodyW/2 - 24, topY + shoulderDrop + bodyH);
+  ctx.lineTo(cx - bodyW/2 + 24, topY + shoulderDrop + bodyH);
+  ctx.quadraticCurveTo(cx - bodyW/2, topY + shoulderDrop + bodyH, cx - bodyW/2, topY + shoulderDrop + bodyH - 24);
+  ctx.lineTo(cx - bodyW/2, topY + shoulderDrop + sleeveH);
+  ctx.lineTo(cx - bodyW/2 - sleeveW, topY + shoulderDrop + sleeveH);
+  ctx.closePath();
+
+  ctx.fill();
+  ctx.globalAlpha = 0.25; ctx.stroke(); ctx.globalAlpha = 1;
+  ctx.restore();
+
+  if(state.product==='hoodie' && state.side==='front'){
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx-20, topY+shoulderDrop+8);
+    ctx.lineTo(cx-20, topY+shoulderDrop+42);
+    ctx.moveTo(cx+20, topY+shoulderDrop+8);
+    ctx.lineTo(cx+20, topY+shoulderDrop+42);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawPrintArea(){
+  const pa = currentPA();
+  const W = in2px(pa.w), H = in2px(pa.h);
+  const top = shirtTopY() + in2px(pa.yOffsetIn);
+  const left = canvas.width/2 - W/2;
+  ctx.save();
+  ctx.setLineDash([6,6]);
+  ctx.strokeStyle = 'rgba(147,197,253,0.9)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(left, top, W, H);
+  ctx.restore();
+}
+
+function drawArtwork(){
+  if(!state.img) return;
+  const pa = currentPA();
+  const W = in2px(pa.w), H = in2px(pa.h);
+  const top = shirtTopY() + in2px(pa.yOffsetIn);
+  const left = canvas.width/2 - W/2;
+
+  const xform = getXform();
+  ctx.save();
+  ctx.translate(xform.x, xform.y);
+  ctx.rotate(xform.rotation * Math.PI / 180);
+  ctx.scale(xform.scale, xform.scale);
+
+  ctx.save();
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.rect(left, top, W, H);
+  ctx.clip();
+  ctx.translate(xform.x, xform.y);
+  ctx.rotate(xform.rotation * Math.PI / 180);
+  ctx.scale(xform.scale, xform.scale);
+
+  const iw = state.imgNatural.w;
+  const ih = state.imgNatural.h;
+  ctx.drawImage(state.img, -iw/2, -ih/2);
+  ctx.restore();
+
+  ctx.restore();
+}
+
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  const g = ctx.createRadialGradient(canvas.width/2, canvas.height*0.15, 80, canvas.width/2, canvas.height*0.6, canvas.height*0.9);
+  g.addColorStop(0,'#0b1120'); g.addColorStop(1,'#020617');
+  ctx.fillStyle = g; ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  drawShirtBase();
+  drawPrintArea();
+  drawArtwork();
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(226,232,240,0.55)';
+  ctx.font = '12px ui-sans-serif, system-ui';
+  const pa = currentPA();
+  ctx.fillText(`${state.product.toUpperCase()} • ${state.side.toUpperCase()} • Print ${pa.w}" × ${pa.h}"`, 12, 20);
+  ctx.restore();
+}
+
+function updatePrintAreaLabel(){
+  const pa = currentPA();
+  ui.printAreaIn.textContent = `${pa.w}″×${pa.h}″`;
+}
+
+// pointer drag
+canvas.addEventListener('pointerdown', (e)=>{
+  if(!state.img) return;
+  state.dragging = true;
+  const rect = canvas.getBoundingClientRect();
+  state.dragStart = {x:e.clientX - rect.left, y:e.clientY - rect.top};
+  const xf = getXform();
+  state.imgStart = {x:xf.x, y:xf.y};
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener('pointermove', (e)=>{
+  if(!state.dragging) return;
+  const rect = canvas.getBoundingClientRect();
+  const cx = e.clientX - rect.left;
+  const cy = e.clientY - rect.top;
+  const dx = cx - state.dragStart.x;
+  const dy = cy - state.dragStart.y;
+  const xf = getXform();
+  xf.x = state.imgStart.x + dx;
+  xf.y = state.imgStart.y + dy;
+  draw();
+});
+canvas.addEventListener('pointerup', (e)=>{
+  state.dragging = false;
+  canvas.releasePointerCapture(e.pointerId);
+});
+
+// UI events
+ui.product.addEventListener('change', ()=>{
+  state.product = ui.product.value;
+  syncSliders(); updatePrintAreaLabel(); draw();
+});
+ui.toggleSide.addEventListener('click', ()=>{
+  state.side = state.side==='front'?'back':'front';
+  ui.sideLabel.textContent = state.side.charAt(0).toUpperCase()+state.side.slice(1);
+  syncSliders(); updatePrintAreaLabel(); draw();
+});
+
+ui.uploader.addEventListener('change', (e)=>{
+  const file = e.target.files?.[0];
+  if(!file){ return; }
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = ()=>{
+    state.img = img;
+    state.imgNatural = {w:img.naturalWidth, h:img.naturalHeight};
+    ui.status.textContent = `Loaded ${file.name} (${img.naturalWidth}×${img.naturalHeight})`;
+    resetTransformToCenter();
+    draw();
+    URL.revokeObjectURL(url);
+  };
+  img.onerror = ()=>{ ui.status.textContent = 'Error loading image. Try a PNG or JPG.'; };
+  img.src = url;
+});
+
+ui.scale.addEventListener('input', ()=>{ getXform().scale = parseFloat(ui.scale.value); draw(); });
+ui.rotate.addEventListener('input', ()=>{ getXform().rotation = parseFloat(ui.rotate.value); draw(); });
+
+ui.downloadMockup.addEventListener('click', ()=>{
+  const link = document.createElement('a');
+  link.download = `mockup_${state.product}_${state.side}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+});
+
+ui.downloadPrint.addEventListener('click', ()=>{
+  if(!state.img){ ui.status.textContent = 'Upload an image first to export print file.'; return; }
+  const pa = currentPA();
+  const dpi = CONFIG.DPI;
+  const Wpx = Math.round(pa.w * dpi);
+  const Hpx = Math.round(pa.h * dpi);
+
+  const off = document.createElement('canvas');
+  off.width = Wpx; off.height = Hpx;
+  const octx = off.getContext('2d');
+
+  const xform = getXform();
+  const previewPAW = in2px(pa.w), previewPAH = in2px(pa.h);
+  const paLeft = canvas.width/2 - previewPAW/2;
+  const paTop  = shirtTopY() + in2px(pa.yOffsetIn);
+  const relX = xform.x - paLeft;
+  const relY = xform.y - paTop;
+  const scaleToPrint = (Wpx / previewPAW);
+
+  octx.save();
+  octx.translate(relX * scaleToPrint, relY * scaleToPrint);
+  octx.rotate(xform.rotation * Math.PI / 180);
+  const finalScale = xform.scale * scaleToPrint;
+  octx.scale(finalScale, finalScale);
+  octx.drawImage(state.img, -state.imgNatural.w/2, -state.imgNatural.h/2);
+  octx.restore();
+
+  off.toBlob((blob)=>{
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `print_${state.product}_${state.side}_${pa.w}x${pa.h}_@${dpi}dpi.png`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, 'image/png');
+});
+
+(function init(){
+  canvas.width  = CONFIG.PREVIEW.width;
+  canvas.height = CONFIG.PREVIEW.height;
+  updatePrintAreaLabel();
+  draw();
+})();
+</script>
+</body>
+</html>
